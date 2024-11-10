@@ -79,10 +79,9 @@ FROM RankedRatings
 WHERE rank = 1;
 ```
 
-**Objective:** Identify the most frequently occurring rating for each type of content.
+**Objective:** User Interest and Trends Analysis
 
-### 3. User Interest and Trends Analysis
-Question: What are the top 10 most popular genres on Netflix based on the count of titles added in each genre?
+### 3. What are the top 10 most popular genres on Netflix based on the count of titles added in each genre?
 
 ```sql
 SELECT 
@@ -96,35 +95,50 @@ LIMIT 10;
 
 ```
 
-**Objective:** Retrieve all movies released in a specific year.
+**Objective:** Content Release Timing and Trends
 
-### 4. Find the Top 5 Countries with the Most Content on Netflix
+### 4. During which month(s) of the year does Netflix release the most content, and how has this trend changed over the years?
 
 ```sql
-SELECT * 
-FROM
-(
-    SELECT 
-        UNNEST(STRING_TO_ARRAY(country, ',')) AS country,
-        COUNT(*) AS total_content
-    FROM netflix
-    GROUP BY 1
-) AS t1
-WHERE country IS NOT NULL
-ORDER BY total_content DESC
-LIMIT 5;
+WITH monthly_count AS 
+    (SELECT  
+    EXTRACT(YEAR FROM TO_DATE(date_added,'Month DD, Year')) AS release_year,
+    EXTRACT(MONTH FROM TO_DATE(date_added,'Month DD, Year')) AS release_Months,
+    COUNT(*) AS content
+FROM netflix
+GROUP BY 1,2
+--HAVING COUNT(*) > 100
+ORDER BY 2,3 DESC) 
+
+
+ SELECT * 
+ FROM       
+    (SELECT release_year, release_Months, content, 
+            ROW_NUMBER() OVER(PARTITION BY release_year ORDER BY content DESC) AS most_content
+    FROM monthly_count)
+WHERE most_content = 1 AND release_year IS NOT NULL
+ORDER BY content DESC;
 ```
 
-**Objective:** Identify the top 5 countries with the highest number of content items.
+**Objective:** Top Directors by Genre
 
-### 5. Identify the Longest Movie
+### 5. Who are the top 5 most prolific directors in each genre?
 
 ```sql
-SELECT 
-    *
+WITH gen_dic AS (SELECT 
+    UNNEST(STRING_TO_ARRAY(listed_in,',')) AS genre,
+    UNNEST(STRING_TO_ARRAY(director,',')) AS director,
+    COUNT(show_id) AS content
 FROM netflix
-WHERE type = 'Movie'
-ORDER BY SPLIT_PART(duration, ' ', 1)::INT DESC;
+GROUP BY 1,2)
+
+ SELECT *       
+FROM        
+    (SELECT *, 
+        ROW_NUMBER() OVER(PARTITION BY genre ORDER BY content DESC) AS top
+    FROM gen_dic
+    WHERE director IS NOT NULL AND genre IS NOT NULL)
+WHERE top <= 5 
 ```
 
 **Objective:** Find the movie with the longest duration.
@@ -137,19 +151,36 @@ FROM netflix
 WHERE TO_DATE(date_added, 'Month DD, YYYY') >= CURRENT_DATE - INTERVAL '5 years';
 ```
 
-**Objective:** Retrieve content added to Netflix in the last 5 years.
+**Objective:** Audience Suitability Trends
 
-### 7. Find All Movies/TV Shows by Director 'Rajiv Chilaka'
+### 7. How has the distribution of content ratings (e.g., PG, R, TV-MA) changed over the years?
 
 ```sql
-SELECT *
-FROM (
-    SELECT 
-        *,
-        UNNEST(STRING_TO_ARRAY(director, ',')) AS director_name
-    FROM netflix
-) AS t
-WHERE director_name = 'Rajiv Chilaka';
+WITH trends AS (SELECT
+     rating,
+     EXTRACT(YEAR FROM TO_DATE(date_added,'Month DD, Year')) AS release_year,
+     COUNT(*)
+FROM netflix
+WHERE rating IN ('PG', 'R', 'TV-MA') AND date_added IS NOT NULL
+GROUP BY 1, 2),
+
+overall AS 
+(SELECT EXTRACT(YEAR FROM TO_DATE(date_added, 'Month DD,Year')) AS release_year,
+    COUNT(*) AS total_content
+FROM netflix
+WHERE date_added IS NOT NULL
+GROUP BY 1)
+
+SELECT 
+    t.release_year, 
+    t.rating,
+    t.count, 
+    o.total_content, 
+    ROUND(t.count::NUMERIC/o.total_content::NUMERIC * 100,2) AS percentage
+FROM trends AS t
+JOIN overall AS o ON t.release_year = o.release_year
+GROUP BY 1,2,3,4
+ORDER BY 2,1;
 ```
 
 **Objective:** List all content directed by 'Rajiv Chilaka'.
@@ -163,16 +194,38 @@ WHERE type = 'TV Show'
   AND SPLIT_PART(duration, ' ', 1)::INT > 5;
 ```
 
-**Objective:** Identify TV shows with more than 5 seasons.
+**Objective:** International Content Growth
 
-### 9. Count the Number of Content Items in Each Genre
+### 9. Which countries have seen the highest growth in Netflix content over the years?
 
 ```sql
+WITH content AS (
+    SELECT 
+        EXTRACT(YEAR FROM TO_DATE(date_added, 'Month DD, YYYY')) AS release_year,
+        TRIM(UNNEST(STRING_TO_ARRAY(country, ','))) AS countries,
+        COUNT(*) AS total_content
+    FROM netflix
+    WHERE date_added IS NOT NULL
+    GROUP BY 1, 2
+)
+
 SELECT 
-    UNNEST(STRING_TO_ARRAY(listed_in, ',')) AS genre,
-    COUNT(*) AS total_content
-FROM netflix
-GROUP BY 1;
+    release_year,
+    countries,
+    total_content,
+    LAG(total_content) OVER (PARTITION BY countries ORDER BY release_year) AS previous_year_content,
+    ROUND(
+        (total_content::NUMERIC - LAG(total_content) OVER (PARTITION BY countries ORDER BY release_year)) 
+        / NULLIF(LAG(total_content) OVER (PARTITION BY countries ORDER BY release_year), 0) * 100, 
+        2
+    ) AS growth_percentage
+FROM 
+    content
+WHERE 
+    release_year > 2018
+    AND countries IN ('France', 'Germany', 'India', 'Japan', 'Russia', 'South Korea')
+ORDER BY 
+    countries, release_year;
 ```
 
 **Objective:** Count the number of content items in each genre.
