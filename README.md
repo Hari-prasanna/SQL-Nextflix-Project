@@ -81,12 +81,19 @@ WHERE rank = 1;
 
 **Objective:** Identify the most frequently occurring rating for each type of content.
 
-### 3. List All Movies Released in a Specific Year (e.g., 2020)
+### 3. User Interest and Trends Analysis
+Question: What are the top 10 most popular genres on Netflix based on the count of titles added in each genre?
 
 ```sql
-SELECT * 
+SELECT 
+    UNNEST(STRING_TO_ARRAY(listed_in,',')) AS genre,
+    COUNT(*) AS content,
+    ROUND(COUNt(*)::NUMERIC / (SELECT COUNT(*) FROM netflix)::NUMERIC * 100,2) AS Average_content_Per_genre
 FROM netflix
-WHERE release_year = 2020;
+GROUP BY 1
+ORDER BY 2 DESC
+LIMIT 10;
+
 ```
 
 **Objective:** Retrieve all movies released in a specific year.
